@@ -76,6 +76,10 @@ int movfd(int old, int new) {
     return new;
 }
 
+void exec_simple_command(struct SimpleCommand *cmd) {
+    
+}
+
 int execute_pipechain(struct Pipechain *chain) {
     struct SimpleCommand *current = chain->simple_commands;
 
