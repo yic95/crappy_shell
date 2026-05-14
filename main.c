@@ -150,11 +150,11 @@ int execute_pipechain(struct Pipechain *chain) {
         if (cpid == 0) {  /* Child. Forked out to execute command */
             movfd(inputfd, STDIN_FILENO);
             if (has_next) {
-                if (close(pipefd[0]) == -1  /* Close read end of pipe */
-                    || movfd(pipefd[1], STDOUT_FILENO) == -1) /* Move write end of pipe */ {
+                if (close(pipefd[0]) == -1) {  /* Close read end of pipe */
                     perror("close");
-                    _exit(EXIT_FAILURE);
+                    exit(EXIT_FAILURE);
                 }
+                movfd(pipefd[1], STDOUT_FILENO);
             }
 
             int ofd = current->oredir_append;
@@ -164,9 +164,9 @@ int execute_pipechain(struct Pipechain *chain) {
                 if (strcmp(current->argv[0], builtin_str[i]) == 0) {
                     int status = builtin_func[i](&(current->argv[1]));
                     if (status < 0) {
-                        _exit(0);
+                        exit(0);
                     }
-                    _exit(status);
+                    exit(status);
                 }
             }
 
@@ -327,6 +327,7 @@ struct Pipechain *parse_line(const char *line)
         if (previous_pipe != NULL) {
             previous_pipe->next = current_pipe;
         }
+        previous_pipe = current_pipe;
     
         current_pipe->reverse_status = false;
         if (*cursor == '!') {
@@ -398,10 +399,10 @@ struct Pipechain *parse_line(const char *line)
                         perror("calloc");
                         exit(1);
                     }
-                    remove_squote(token);
-                    current_cmd->argv[argc] = token;
-                    argc++;
                 }
+                remove_squote(token);
+                current_cmd->argv[argc] = token;
+                argc++;
             }
 
             current_cmd->argv[argc] = NULL;
@@ -452,7 +453,55 @@ ssize_t get_line(char **buf, size_t *bufsize, int fd)
     return count;
 }
 
+void print_cmd(struct Pipechain *walk)
+{
+    while (walk) {
+        struct SimpleCommand *walksc = walk->simple_commands;
+        while (walksc) {
+            for (int i = 0; walksc->argv[i]; i++)
+                printf("%s ", walksc->argv[i]);
+            if (walksc->iredir_path) {
+                printf("<%s ", walksc->iredir_path);
+            }
+            if (walksc->oredir_path) {
+                printf(">%s ", walksc->oredir_path);
+            }
+            if (walksc->next)
+                printf("| ");
+            walksc = walksc->next;
+        }
+        if (walk->next) {
+            printf("%s", walk->connector == CONN_SUCCESS ? "&&" : "||");
+        }
+        walk = walk->next;
+    }
+}
+
+void free_cmd(struct Pipechain *cmd)
+{
+    while (cmd) {
+        struct Pipechain *next_pl = cmd->next;
+        struct SimpleCommand *sc = cmd->simple_commands;
+        while (sc) {
+            struct SimpleCommand *next = sc->next;
+
+            for (int i = 0; sc->argv[i] == NULL; i++) {
+                free(sc->argv[i]);
+            }
+            free(sc->oredir_path);
+            free(sc->iredir_path);
+            
+            free(sc);
+            sc = next;
+        }
+        free(cmd);
+        cmd = next_pl;
+    }
+}
+
 int main(int argc, char *argv[], char *envp[])
 {
-    parse_line("echo 'Hello, world!' | cat && echo 'done'");
+    struct Pipechain *cmd = parse_line("echo 'Hello, world!'|cat&&echo 'hi' | cat");
+    execute_command(cmd);
+    free_cmd(cmd);
 }
