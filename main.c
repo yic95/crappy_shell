@@ -338,6 +338,10 @@ struct Pipechain *parse_line(const char *line)
         struct SimpleCommand *previous_cmd = NULL;
         int pipeline_done = false;
         while (!pipeline_done) {
+            cursor = skip_ws(cursor);
+            if (*cursor == '\0') {
+                break;
+            }
             struct SimpleCommand *current_cmd = calloc(1, sizeof(struct SimpleCommand));
             if (current_pipe->simple_commands == NULL)
                 current_pipe->simple_commands = current_cmd;
@@ -501,7 +505,30 @@ void free_cmd(struct Pipechain *cmd)
 
 int main(int argc, char *argv[], char *envp[])
 {
-    struct Pipechain *cmd = parse_line("echo 'Hello, world!'|cat&&echo 'hi' | cat");
-    execute_command(cmd);
-    free_cmd(cmd);
+    int status = 0;
+    size_t bufsize = 32;
+    char *buf = calloc(bufsize, sizeof(char));
+    while (true) {
+        write(STDOUT_FILENO, "$ ", 2);
+        ssize_t nchar = get_line(&buf, &bufsize, STDIN_FILENO);
+        if (nchar < 0) {
+            char *msg = "Unable to read line";
+            write(STDERR_FILENO, msg, strlen(msg));
+            status = 1;
+        }
+        if (nchar == 0) {
+            write(STDOUT_FILENO, "\n", 1);
+            break;
+        }
+        struct Pipechain *cmd = parse_line(buf);
+        int cmd_result = execute_command(cmd);
+        free_cmd(cmd);
+        if (cmd_result == -1) {
+            status = 0;
+            break;
+        }
+
+        snprintf(buf, bufsize, "%d", cmd_result);
+        write(STDOUT_FILENO, buf, strlen(buf));
+    }
 }
